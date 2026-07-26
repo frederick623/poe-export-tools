@@ -262,7 +262,17 @@ function resolveMarkdownSectionPath(
   if (!cleanPath) return null;
 
   if (cleanPath.includes("/")) {
-    return treePaths.includes(cleanPath) ? cleanPath : null;
+    if (treePaths.includes(cleanPath)) {
+      return cleanPath;
+    }
+
+    // Support section headings that omit the root folder from the file tree.
+    const suffixMatches = treePaths.filter((path) => path.endsWith(`/${cleanPath}`));
+    if (suffixMatches.length === 1) {
+      return suffixMatches[0] ?? null;
+    }
+
+    return null;
   }
 
   const matches = pathIndex.get(cleanPath);

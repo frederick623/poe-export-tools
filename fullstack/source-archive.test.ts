@@ -54,4 +54,40 @@ describe("buildSourceArchiveEntries", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.name).toBe("next-data.json");
   });
+
+  test("resolves nested section paths when headings omit the tree root folder", () => {
+    const entries = buildSourceArchiveEntries({
+      name: "bundle.json",
+      type: "application/json",
+      raw: JSON.stringify({
+        content: [
+          "File tree",
+          "",
+          "```text",
+          "TetrisUE/",
+          "├── TetrisUE.uproject",
+          "└── Source/",
+          "    └── TetrisUE/",
+          "        └── TetrisUE.cpp",
+          "```",
+          "",
+          "### `TetrisUE.uproject`",
+          "```json",
+          "{ \"name\": \"uproject\" }",
+          "```",
+          "",
+          "### `Source/TetrisUE/TetrisUE.cpp`",
+          "```cpp",
+          "name = \"source\";",
+          "```",
+        ].join("\n"),
+      }),
+    });
+
+    expect(entries.map((entry) => entry.name)).toEqual([
+      "bundle.json",
+      "TetrisUE/TetrisUE.uproject",
+      "TetrisUE/Source/TetrisUE/TetrisUE.cpp",
+    ]);
+  });
 });
