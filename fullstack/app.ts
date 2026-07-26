@@ -1,4 +1,6 @@
 import { downloadZip } from "client-zip";
+import { parseChatMessages, type ChatMessage } from "./chat-data";
+import { buildSourceArchiveEntries } from "./source-archive";
 
 const form = document.querySelector<HTMLFormElement>("#share-form");
 const input = document.querySelector<HTMLInputElement>("#share-url");
@@ -12,79 +14,60 @@ const menuUpload = document.querySelector<HTMLButtonElement>("#menu-upload");
 const menuToggle = document.querySelector<HTMLButtonElement>("#menu-toggle");
 const uploadInput = document.querySelector<HTMLInputElement>("#upload-input");
 const notice = document.querySelector<HTMLElement>("#notice");
+const intro = document.querySelector<HTMLElement>("#intro");
+const imageViewer = document.querySelector<HTMLElement>("#image-viewer");
+const viewerStage = document.querySelector<HTMLElement>("#viewer-stage");
+const viewerImage = document.querySelector<HTMLImageElement>("#viewer-image");
+const viewerCount = document.querySelector<HTMLElement>("#viewer-count");
+const viewerClose = document.querySelector<HTMLButtonElement>("#viewer-close");
+const viewerPrev = document.querySelector<HTMLButtonElement>("#viewer-prev");
+const viewerNext = document.querySelector<HTMLButtonElement>("#viewer-next");
 
 const urls: string[] = [];
-let nextDataRaw: string | null = null;
+const imageUrls: string[] = [];
+let sourceFile: SourceFile | null = null;
 let chatMessages: ChatMessage[] = [];
 let isChatView = false;
 let isLoading = false;
 let isMenuOpen = false;
+let viewerIndex = -1;
+let viewerTouchStartX: number | null = null;
 
 const videoExtensions = new Set(["mp4", "webm", "ogg", "mov", "m4v"]);
+const audioExtensions = new Set(["mp3", "wav", "m4a", "weba"]);
+const imageExtensions = new Set(["avif", "gif", "jpeg", "jpg", "png", "webp"]);
+const fileExtensions = new Set([
+  "csv",
+  "doc",
+  "docx",
+  "json",
+  "md",
+  "pdf",
+  "txt",
+  "xls",
+  "xlsx",
+  "zip",
+]);
 
 const icons = {
   upload:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload-icon lucide-upload"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>',
+    '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload-icon lucide-upload"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>',
   home:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-house-icon lucide-house"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-house-icon lucide-house"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   paste:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-paste-icon lucide-clipboard-paste"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>',
+    '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-paste-icon lucide-clipboard-paste"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>',
   enter:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right-icon lucide-arrow-right"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>',
+    '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-right-icon lucide-arrow-right"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>',
   ellipsis:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ellipsis-vertical-icon lucide-ellipsis-vertical"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>',
+    '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-ellipsis-vertical-icon lucide-ellipsis-vertical"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>',
+  file:
+    '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-file-icon lucide-file"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>',
 };
 
-type PoeAttachment = {
-  url?: string;
-  file?: {
-    url?: string;
-  };
-};
-
-type PoeMessage = {
-  author?: string;
-  text?: string;
-  attachments?: PoeAttachment[];
-};
-
-type PoeNextData = {
-  props?: {
-    pageProps?: {
-      data?: {
-        mainQuery?: {
-          chatShare?: {
-            messages?: PoeMessage[];
-          };
-        };
-      };
-    };
-  };
-};
-
-type ExportAttachment = {
-  url?: string;
-};
-
-type ExportMessage = {
-  role?: string;
-  content?: string;
-  attachments?: ExportAttachment[];
-};
-
-type ExportData = {
-  messages?: ExportMessage[];
-};
-
-type ChatMessage = {
-  role: "human" | "bot";
-  text: string;
-  attachments: string[];
-};
-
-type ChatParseResult = {
-  messages: ChatMessage[];
-  error: string | null;
+type SourceFile = {
+  name: string;
+  raw: string;
+  type: string;
 };
 
 function setLoading(loading: boolean) {
@@ -154,7 +137,7 @@ function setMenuOpen(open: boolean) {
 }
 
 function hasContent() {
-  return urls.length > 0 || chatMessages.length > 0 || Boolean(nextDataRaw);
+  return urls.length > 0 || chatMessages.length > 0 || Boolean(sourceFile);
 }
 
 function updateHeaderState() {
@@ -164,10 +147,12 @@ function updateHeaderState() {
     isMenuOpen = false;
   }
 
+  if (intro) intro.classList.toggle("is-hidden", showContent);
+
   setButtonIcon(
     leftButton,
     showContent ? icons.home : icons.upload,
-    showContent ? "Home" : "Upload next-data.json",
+    showContent ? "Home" : "Upload chat export",
     showContent ? "home" : "upload"
   );
   if (leftButton) leftButton.disabled = isLoading;
@@ -198,7 +183,7 @@ function updateHeaderState() {
   }
 
   if (menuDownload) {
-    menuDownload.disabled = isLoading || (urls.length === 0 && !nextDataRaw);
+    menuDownload.disabled = isLoading || (urls.length === 0 && !sourceFile);
   }
   if (menuUpload) {
     menuUpload.disabled = isLoading;
@@ -210,37 +195,108 @@ function updateHeaderState() {
   }
 }
 
-function createMediaAnchor(url: string, className: string, index?: number) {
-  const anchor = document.createElement("a");
-  anchor.className = className;
-  if (typeof index === "number") {
-    anchor.style.animationDelay = `${Math.min(index * 0.03, 0.3)}s`;
+function attachmentFilename(url: string) {
+  try {
+    const parsed = new URL(url);
+    return decodeURIComponent(parsed.pathname.split("/").pop() ?? "");
+  } catch {
+    return "";
   }
-  anchor.href = url;
-  anchor.target = "_blank";
-  anchor.rel = "noreferrer";
+}
 
-  const preview = document.createElement("div");
-  preview.className = "media-preview";
+function describeAttachment(url: string, index?: number) {
+  const filename = attachmentFilename(url);
+  if (filename) {
+    return typeof index === "number"
+      ? `Attachment ${index + 1}: ${filename}`
+      : `Attachment: ${filename}`;
+  }
+  return typeof index === "number" ? `Attachment ${index + 1}` : "Attachment";
+}
+
+function createMediaItem(
+  url: string,
+  className: string,
+  index?: number,
+  loading: "eager" | "lazy" = "lazy"
+) {
+  const label = describeAttachment(url, index);
   if (isVideoUrl(url)) {
+    const item = createMediaShell("div", className, index);
+    const preview = createMediaPreview();
     const video = document.createElement("video");
     video.src = url;
     video.controls = true;
     video.muted = true;
     video.playsInline = true;
     video.preload = "metadata";
-    video.setAttribute("aria-label", "Attachment preview");
+    video.setAttribute("aria-label", label);
     preview.appendChild(video);
-  } else {
-    const img = document.createElement("img");
-    img.src = url;
-    img.loading = "lazy";
-    img.alt = "Attachment preview";
-    preview.appendChild(img);
+    item.appendChild(preview);
+    return item;
+  } else if (isAudioUrl(url)) {
+    const item = createMediaShell("div", className, index);
+    const preview = createMediaPreview();
+    const audio = document.createElement("audio");
+    audio.src = url;
+    audio.controls = true;
+    audio.preload = "metadata";
+    audio.setAttribute("aria-label", label);
+    preview.appendChild(audio);
+    item.appendChild(preview);
+    return item;
+  } else if (isFileUrl(url)) {
+    const item = createMediaShell("a", className, index);
+    item.href = url;
+    item.target = "_blank";
+    item.rel = "noreferrer";
+    item.setAttribute("aria-label", label);
+
+    const preview = createMediaPreview();
+    const file = document.createElement("div");
+    file.className = "file-preview";
+    file.innerHTML = icons.file;
+
+    const name = document.createElement("span");
+    name.textContent = attachmentFilename(url) || "File";
+    file.appendChild(name);
+    preview.appendChild(file);
+    item.appendChild(preview);
+    return item;
   }
 
-  anchor.appendChild(preview);
-  return anchor;
+  const item = createMediaShell("button", className, index);
+  item.type = "button";
+  item.setAttribute("aria-label", `Preview ${label}`);
+  item.addEventListener("click", () => openImageViewer(url));
+
+  const preview = createMediaPreview();
+  const img = document.createElement("img");
+  img.src = url;
+  img.loading = loading;
+  img.alt = label;
+  preview.appendChild(img);
+  item.appendChild(preview);
+  return item;
+}
+
+function createMediaShell<T extends "a" | "button" | "div">(
+  tagName: T,
+  className: string,
+  index?: number
+) {
+  const element = document.createElement(tagName);
+  element.className = className;
+  if (typeof index === "number") {
+    element.style.animationDelay = `${Math.min(index * 0.03, 0.3)}s`;
+  }
+  return element;
+}
+
+function createMediaPreview() {
+  const preview = document.createElement("div");
+  preview.className = "media-preview";
+  return preview;
 }
 
 function renderUrls(list: string[]) {
@@ -254,7 +310,7 @@ function renderUrls(list: string[]) {
   const fragment = document.createDocumentFragment();
 
   list.forEach((url, index) => {
-    fragment.appendChild(createMediaAnchor(url, "media-item", index));
+    fragment.appendChild(createMediaItem(url, "media-item", index));
   });
 
   grid.appendChild(fragment);
@@ -276,6 +332,9 @@ function renderChat(messages: ChatMessage[]) {
 
     const card = document.createElement("div");
     card.className = "chat-card";
+    if (message.attachments.length > 0) {
+      card.classList.add("chat-card-has-media");
+    }
 
     if (message.text) {
       const text = document.createElement("p");
@@ -288,7 +347,7 @@ function renderChat(messages: ChatMessage[]) {
       const media = document.createElement("div");
       media.className = "chat-media";
       message.attachments.forEach((url) => {
-        media.appendChild(createMediaAnchor(url, "chat-media-item"));
+        media.appendChild(createMediaItem(url, "chat-media-item", undefined, "eager"));
       });
       card.appendChild(media);
     }
@@ -300,11 +359,18 @@ function renderChat(messages: ChatMessage[]) {
   chat.appendChild(fragment);
 }
 
-function applyNextData(raw: string | null, fallbackUrls: string[] = []) {
-  nextDataRaw = raw;
+function applyChatData(
+  raw: string | null,
+  fallbackUrls: string[] = [],
+  sourceName = "chat-export.json"
+) {
+  sourceFile = raw
+    ? { name: sourceName, raw, type: contentTypeForSourceName(sourceName) }
+    : null;
   const parsed = parseChatMessages(raw);
   chatMessages = parsed.messages;
   urls.length = 0;
+  imageUrls.length = 0;
   const seen = new Set<string>();
   for (const message of chatMessages) {
     for (const url of message.attachments) {
@@ -317,6 +383,7 @@ function applyNextData(raw: string | null, fallbackUrls: string[] = []) {
   if (urls.length === 0 && fallbackUrls.length > 0) {
     urls.push(...fallbackUrls);
   }
+  syncImageUrls();
 
   renderUrls(urls);
   renderChat(chatMessages);
@@ -326,70 +393,10 @@ function applyNextData(raw: string | null, fallbackUrls: string[] = []) {
   setViewMode(nextView);
 }
 
-function parseChatMessages(raw: string | null): ChatParseResult {
-  if (!raw) return { messages: [], error: null };
-  let data: PoeNextData | ExportData;
-  try {
-    data = JSON.parse(raw) as PoeNextData | ExportData;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid JSON";
-    return { messages: [], error: `Invalid JSON payload: ${message}` };
-  }
-
-  const nextDataMessages =
-    (data as PoeNextData)?.props?.pageProps?.data?.mainQuery?.chatShare?.messages;
-  if (Array.isArray(nextDataMessages)) {
-    return {
-      messages: nextDataMessages.map((message) => {
-        const attachments: string[] = [];
-        if (Array.isArray(message?.attachments)) {
-          const seen = new Set<string>();
-          for (const attachment of message.attachments) {
-            const url = attachment?.file?.url ?? attachment?.url;
-            if (typeof url === "string" && url.length > 0 && !seen.has(url)) {
-              seen.add(url);
-              attachments.push(url);
-            }
-          }
-        }
-
-        return {
-          role: message?.author === "human" ? "human" : "bot",
-          text: typeof message?.text === "string" ? message.text : "",
-          attachments,
-        };
-      }),
-      error: null,
-    };
-  }
-
-  const exportMessages = (data as ExportData)?.messages;
-  if (Array.isArray(exportMessages)) {
-    return {
-      messages: exportMessages.map((message) => {
-        const attachments: string[] = [];
-        if (Array.isArray(message?.attachments)) {
-          const seen = new Set<string>();
-          for (const attachment of message.attachments) {
-            const url = attachment?.url;
-            if (typeof url === "string" && url.length > 0 && !seen.has(url)) {
-              seen.add(url);
-              attachments.push(url);
-            }
-          }
-        }
-
-        return {
-          role: message?.role === "user" ? "human" : "bot",
-          text: typeof message?.content === "string" ? message.content : "",
-          attachments,
-        };
-      }),
-      error: null,
-    };
-  }
-
-  return { messages: [], error: "Chat data missing from JSON payload." };
+function contentTypeForSourceName(name: string) {
+  return name.toLowerCase().endsWith(".md")
+    ? "text/markdown"
+    : "application/json";
 }
 
 function formatGalleryZipName(date: Date) {
@@ -427,16 +434,105 @@ function buildAttachmentName(rawUrl: string, index: number, seenNames: Map<strin
 }
 
 function isVideoUrl(rawUrl: string) {
+  const extension = extensionFromUrl(rawUrl);
+  if (extension && videoExtensions.has(extension)) return true;
+
   try {
     const url = new URL(rawUrl);
     const segments = url.pathname.split("/");
-    const lastSegment = segments[segments.length - 1] ?? "";
-    if (segments.includes("video")) return true;
-    const extension = lastSegment.split(".").pop()?.toLowerCase();
-    return extension ? videoExtensions.has(extension) : false;
+    return segments.includes("video");
   } catch {
     return false;
   }
+}
+
+function isAudioUrl(rawUrl: string) {
+  const extension = extensionFromUrl(rawUrl);
+  return extension ? audioExtensions.has(extension) : false;
+}
+
+function isFileUrl(rawUrl: string) {
+  const extension = extensionFromUrl(rawUrl);
+  return extension ? fileExtensions.has(extension) : false;
+}
+
+function extensionFromUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    const lastSegment = url.pathname.split("/").pop() ?? "";
+    const extension = lastSegment.split(".").pop()?.toLowerCase();
+    return extension && extension !== lastSegment.toLowerCase() ? extension : "";
+  } catch {
+    return "";
+  }
+}
+
+function isImageUrl(rawUrl: string) {
+  if (rawUrl.startsWith("data:image/")) return true;
+  if (isVideoUrl(rawUrl) || isAudioUrl(rawUrl) || isFileUrl(rawUrl)) return false;
+  const extension = extensionFromUrl(rawUrl);
+  if (extension) return imageExtensions.has(extension);
+
+  try {
+    const url = new URL(rawUrl);
+    return url.pathname.split("/").includes("image");
+  } catch {
+    return true;
+  }
+}
+
+function syncImageUrls() {
+  imageUrls.length = 0;
+  for (const url of urls) {
+    if (isImageUrl(url)) {
+      imageUrls.push(url);
+    }
+  }
+}
+
+function openImageViewer(url: string) {
+  const index = imageUrls.indexOf(url);
+  if (index < 0) return;
+
+  viewerIndex = index;
+  renderImageViewer();
+  imageViewer?.classList.remove("is-hidden");
+  document.body.classList.add("has-image-viewer");
+  viewerClose?.focus();
+}
+
+function closeImageViewer() {
+  if (viewerIndex < 0) return;
+
+  viewerIndex = -1;
+  imageViewer?.classList.add("is-hidden");
+  document.body.classList.remove("has-image-viewer");
+  if (viewerImage) {
+    viewerImage.removeAttribute("src");
+    viewerImage.alt = "";
+  }
+}
+
+function showViewerImage(delta: number) {
+  if (viewerIndex < 0 || imageUrls.length === 0) return;
+
+  viewerIndex = (viewerIndex + delta + imageUrls.length) % imageUrls.length;
+  renderImageViewer();
+}
+
+function renderImageViewer() {
+  if (!viewerImage || !viewerCount || viewerIndex < 0) return;
+
+  const url = imageUrls[viewerIndex];
+  if (!url) return;
+
+  viewerImage.src = url;
+  viewerImage.alt = describeAttachment(url);
+  viewerCount.textContent = `${viewerIndex + 1} / ${imageUrls.length}`;
+
+  const hasMultipleImages = imageUrls.length > 1;
+  if (viewerPrev) viewerPrev.disabled = !hasMultipleImages;
+  if (viewerNext) viewerNext.disabled = !hasMultipleImages;
 }
 
 async function fetchShare() {
@@ -456,8 +552,10 @@ async function fetchShare() {
   if (input) input.value = normalized;
   setError(null);
   urls.length = 0;
-  nextDataRaw = null;
+  imageUrls.length = 0;
+  sourceFile = null;
   chatMessages = [];
+  closeImageViewer();
   clearGrid();
   clearChat();
   setLoading(true);
@@ -484,7 +582,7 @@ async function fetchShare() {
       : [];
     const raw =
       typeof payload?.nextData === "string" ? (payload.nextData as string) : null;
-    applyNextData(raw, fallbackUrls);
+    applyChatData(raw, fallbackUrls, "next-data.json");
     const url = new URL(window.location.href);
     url.searchParams.set("url", normalized);
     window.history.replaceState({}, "", url.toString());
@@ -497,7 +595,7 @@ async function fetchShare() {
 }
 
 async function downloadAll() {
-  if (urls.length === 0 && !nextDataRaw) return;
+  if (urls.length === 0 && !sourceFile) return;
   if (menuDownload) menuDownload.disabled = true;
   const filename = formatGalleryZipName(new Date());
 
@@ -505,11 +603,10 @@ async function downloadAll() {
     const seenNames = new Map<string, number>();
     const zipResponse = downloadZip(
       (async function* () {
-        if (nextDataRaw) {
-          yield {
-            name: "next-data.json",
-            input: new Blob([nextDataRaw], { type: "application/json" }),
-          };
+        if (sourceFile) {
+          for (const entry of buildSourceArchiveEntries(sourceFile)) {
+            yield entry;
+          }
         }
         for (const [index, url] of urls.entries()) {
           const response = await fetch(url);
@@ -557,8 +654,10 @@ leftButton?.addEventListener("click", () => {
   if (leftButton?.disabled) return;
   if (hasContent()) {
     urls.length = 0;
-    nextDataRaw = null;
+    imageUrls.length = 0;
+    sourceFile = null;
     chatMessages = [];
+    closeImageViewer();
     clearGrid();
     clearChat();
     setError(null);
@@ -603,21 +702,26 @@ rightButton?.addEventListener("click", () => {
   })();
 });
 
+function closeMenuRestoreFocus() {
+  setMenuOpen(false);
+  rightButton?.focus();
+}
+
 menuDownload?.addEventListener("click", () => {
   if (menuDownload?.disabled) return;
-  setMenuOpen(false);
+  closeMenuRestoreFocus();
   void downloadAll();
 });
 
 menuUpload?.addEventListener("click", () => {
   if (menuUpload?.disabled) return;
-  setMenuOpen(false);
+  closeMenuRestoreFocus();
   uploadInput?.click();
 });
 
 menuToggle?.addEventListener("click", () => {
   if (menuToggle?.disabled) return;
-  setMenuOpen(false);
+  closeMenuRestoreFocus();
   setViewMode(isChatView ? "grid" : "chat");
 });
 
@@ -630,7 +734,7 @@ uploadInput?.addEventListener("change", () => {
     try {
       const text = await file.text();
       if (input) input.value = "";
-      applyNextData(text);
+      applyChatData(text, [], file.name || "chat-export");
       const url = new URL(window.location.href);
       url.searchParams.delete("url");
       window.history.replaceState({}, "", url.toString());
@@ -651,6 +755,53 @@ document.addEventListener("click", (event) => {
     return;
   }
   setMenuOpen(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (viewerIndex >= 0) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeImageViewer();
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      showViewerImage(-1);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      showViewerImage(1);
+    }
+    return;
+  }
+
+  if (event.key !== "Escape") return;
+  if (!isMenuOpen) return;
+  event.preventDefault();
+  closeMenuRestoreFocus();
+});
+
+imageViewer?.addEventListener("click", (event) => {
+  if (event.target === imageViewer) {
+    closeImageViewer();
+  }
+});
+
+viewerClose?.addEventListener("click", closeImageViewer);
+viewerPrev?.addEventListener("click", () => showViewerImage(-1));
+viewerNext?.addEventListener("click", () => showViewerImage(1));
+
+viewerStage?.addEventListener("touchstart", (event) => {
+  viewerTouchStartX = event.changedTouches[0]?.clientX ?? null;
+});
+
+viewerStage?.addEventListener("touchend", (event) => {
+  if (viewerTouchStartX === null) return;
+
+  const endX = event.changedTouches[0]?.clientX;
+  if (typeof endX !== "number") return;
+
+  const delta = endX - viewerTouchStartX;
+  viewerTouchStartX = null;
+  if (Math.abs(delta) < 40) return;
+  showViewerImage(delta > 0 ? -1 : 1);
 });
 
 const params = new URLSearchParams(window.location.search);
