@@ -145,11 +145,9 @@ function collectStrings(value: unknown, seen = new Set<unknown>()): string[] {
 }
 
 function parseMarkdownSourceBundle(markdown: string): CollectedFile[] {
-  if (!/File tree/i.test(markdown) || !/```/.test(markdown)) return [];
-
   const treePaths = parseMarkdownTreePaths(markdown);
   const sections = parseMarkdownFileSections(markdown);
-  if (sections.length === 0) return [];
+  if (treePaths.length === 0 || sections.length === 0) return [];
 
   const pathIndex = buildPathIndex(treePaths);
   const files: CollectedFile[] = [];
@@ -167,13 +165,23 @@ function parseMarkdownSourceBundle(markdown: string): CollectedFile[] {
 }
 
 function parseMarkdownTreePaths(markdown: string) {
-  const block = markdown.match(/```[\s\S]*?\n([\s\S]*?)```/);
-  if (!block?.[1] || !/File tree/i.test(markdown.slice(0, block.index ?? 0))) return [];
+  const codeBlockPattern = /```(?:[^\n]*)\n([\s\S]*?)```/g;
+  for (const match of markdown.matchAll(codeBlockPattern)) {
+    const paths = parseMarkdownTreeBlock(match[1] ?? "");
+    if (paths.length > 0) {
+      return paths;
+    }
+  }
 
+  return [];
+}
+
+function parseMarkdownTreeBlock(block: string) {
   const paths: string[] = [];
   const stack: string[] = [];
   let rootFolder = "";
-  for (const rawLine of block[1].replace(/\r\n/g, "\n").split("\n")) {
+
+  for (const rawLine of block.replace(/\r\n/g, "\n").split("\n")) {
     const line = rawLine.replace(/\s+$/, "");
     const rootMatch = line.match(/^([A-Za-z0-9._-]+)\/$/);
     if (rootMatch?.[1]) {
@@ -189,16 +197,23 @@ function parseMarkdownTreePaths(markdown: string) {
     const name = match[2].trim();
     if (!name) continue;
 
+    const cleanedName = stripTreeEntrySuffix(name);
+    if (!cleanedName) continue;
+
     stack.length = depth;
-    if (name.endsWith("/")) {
-      stack[depth] = name.slice(0, -1);
+    if (cleanedName.endsWith("/")) {
+      stack[depth] = cleanedName.slice(0, -1);
       continue;
     }
 
-    paths.push(normalizeZipPath(rootFolder, ...stack.slice(0, depth), name));
+    paths.push(normalizeZipPath(rootFolder, ...stack.slice(0, depth), cleanedName));
   }
 
   return paths;
+}
+
+function stripTreeEntrySuffix(name: string) {
+  return name.replace(/\s+#.*$/, "").trim();
 }
 
 function parseMarkdownFileSections(markdown: string) {
@@ -207,8 +222,14 @@ function parseMarkdownFileSections(markdown: string) {
   const sections: Array<{ path: string; content: string }> = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const heading = lines[i]?.match(/^#{2,6}\s+`?([^`]+?)`?\s*$/);
-    if (!heading?.[1]) continue;
+    const headingLine = lines[i]?.trim();
+    if (!headingLine) continue;
+
+    const headingMatch = headingLine.match(/^#{2,6}\s+(.+)$/);
+    if (!headingMatch?.[1]) continue;
+
+    const path = extractSectionPath(headingMatch[1].trim());
+    if (!path) continue;
 
     let fenceStart = -1;
     for (let j = i + 1; j < lines.length; j++) {
@@ -232,13 +253,27 @@ function parseMarkdownFileSections(markdown: string) {
     if (fenceEnd < 0) continue;
 
     sections.push({
-      path: heading[1].trim(),
+      path,
       content: lines.slice(fenceStart + 1, fenceEnd).join("\n"),
     });
     i = fenceEnd;
   }
 
   return sections;
+}
+
+function extractSectionPath(heading: string) {
+  const inlineMatch = heading.match(/^`([^`]+)`/);
+  if (inlineMatch?.[1]) {
+    return inlineMatch[1].trim();
+  }
+
+  const tokenMatch = heading.match(/^([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\.[A-Za-z0-9._-]+)/);
+  if (tokenMatch?.[1]) {
+    return tokenMatch[1].trim();
+  }
+
+  return null;
 }
 
 function buildPathIndex(paths: string[]) {

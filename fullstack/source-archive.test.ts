@@ -90,4 +90,45 @@ describe("buildSourceArchiveEntries", () => {
       "TetrisUE/Source/TetrisUE/TetrisUE.cpp",
     ]);
   });
+
+  test("parses project-layout markdown with code-block sections and backtick headings", () => {
+    const entries = buildSourceArchiveEntries({
+      name: "bundle.json",
+      type: "application/json",
+      raw: JSON.stringify({
+        content: [
+          "## Project layout",
+          "",
+          "```",
+          "stock-explorer/",
+          "├── requirements.txt",
+          "├── stock_data.py     # data layer",
+          "└── app.py            # Streamlit UI",
+          "```",
+          "",
+          "### `requirements.txt`",
+          "```text",
+          "yfinance",
+          "```",
+          "",
+          "## `stock_data.py` — data layer",
+          "```python",
+          "import pandas",
+          "```",
+          "",
+          "## `app.py` — Streamlit UI",
+          "```python",
+          "import streamlit",
+          "```",
+        ].join("\n"),
+      }),
+    });
+
+    expect(entries.map((entry) => entry.name)).toEqual([
+      "bundle.json",
+      "stock-explorer/requirements.txt",
+      "stock-explorer/stock_data.py",
+      "stock-explorer/app.py",
+    ]);
+  });
 });
