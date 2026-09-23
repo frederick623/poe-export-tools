@@ -52,30 +52,24 @@ On Poe, open the chat menu and tap **Share entire chat** to copy a `https://poe.
 </p>
 
 <!-- GETTING STARTED -->
-## Getting Started
+## Prerequisites and Usage
 
-### Installation
-
-1. Clone the repo
-   ```sh
-   git clone https://github.com/frontboat/poe-export-tools.git
-   ```
-2. Enter the fullstack project
-   ```sh
-   cd poe-export-tools/fullstack
-   ```
-3. Install dependencies
-   ```sh
-   bun install --production
-   ```
-
-### Running locally
+Install [Bun](https://bun.sh) and clone this repository:
 
 ```sh
-bun run server.ts
+git clone https://github.com/frontboat/poe-export-tools.git
+cd poe-export-tools
+bun install --cwd fullstack --production
 ```
 
-Open `http://localhost:3000`.
+Run the program from the repository root with a Poe share URL:
+
+```sh
+bun run fullstack/server.ts https://poe.com/s/<share-id>
+```
+
+Replace `<share-id>` with the ID from the Poe share link. The exported zip is
+saved in the current directory.
 
 ### Building
 
