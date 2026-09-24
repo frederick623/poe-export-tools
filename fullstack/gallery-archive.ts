@@ -11,7 +11,8 @@ export function formatGalleryZipName(date: Date) {
 export function buildAttachmentName(
   rawUrl: string,
   index: number,
-  seenNames: Map<string, number>
+  seenNames: Map<string, number>,
+  contentType?: string | null
 ) {
   let name = `attachment-${index + 1}`;
   try {
@@ -32,11 +33,37 @@ export function buildAttachmentName(
   }
 
   if (!name.includes(".")) {
-    name = `${name}.${isVideoUrl(rawUrl) ? "mp4" : "png"}`;
+    const extension =
+      extensionFromContentType(contentType) ?? (isVideoUrl(rawUrl) ? "mp4" : "png");
+    name = `${name}.${extension}`;
   }
 
   seenNames.set(name, count + 1);
   return name;
+}
+
+const contentTypeExtensions: Record<string, string> = {
+  "text/html": "html",
+  "text/plain": "txt",
+  "text/markdown": "md",
+  "text/csv": "csv",
+  "application/json": "json",
+  "application/pdf": "pdf",
+  "application/zip": "zip",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/svg+xml": "svg",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
+};
+
+export function extensionFromContentType(contentType?: string | null) {
+  const mime = contentType?.split(";")[0]?.trim().toLowerCase();
+  return mime ? contentTypeExtensions[mime] ?? null : null;
 }
 
 export async function createGalleryZipBlob(options: {
@@ -61,7 +88,12 @@ export async function createGalleryZipBlob(options: {
         }
 
         yield {
-          name: buildAttachmentName(url, index, seenNames),
+          name: buildAttachmentName(
+            url,
+            index,
+            seenNames,
+            response.headers.get("content-type")
+          ),
           input: response,
         };
       }

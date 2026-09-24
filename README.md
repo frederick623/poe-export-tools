@@ -14,7 +14,7 @@ On Poe, open the chat menu and tap **Share entire chat** to copy a `https://poe.
 Install [Bun](https://bun.sh) and clone this repository:
 
 ```sh
-git clone https://github.com/frontboat/poe-export-tools.git
+git clone https://github.com/frederick623/poe-export-tools.git
 cd poe-export-tools
 bun install --cwd fullstack --production
 ```

@@ -147,7 +147,16 @@ function collectStrings(value: unknown, seen = new Set<unknown>()): string[] {
 function parseMarkdownSourceBundle(markdown: string): CollectedFile[] {
   const treePaths = parseMarkdownTreePaths(markdown);
   const sections = parseMarkdownFileSections(markdown);
-  if (treePaths.length === 0 || sections.length === 0) return [];
+  if (sections.length === 0) return [];
+
+  if (treePaths.length === 0) {
+    const files = new Map<string, string>();
+    for (const section of sections) {
+      const path = normalizeZipPath(section.path);
+      if (path) files.set(path, section.content);
+    }
+    return [...files].map(([path, content]) => ({ path, content }));
+  }
 
   const pathIndex = buildPathIndex(treePaths);
   const files: CollectedFile[] = [];
@@ -389,6 +398,7 @@ function contentTypeForPath(path: string) {
     case "tsx":
     case "js":
     case "jsx":
+    case "py":
     case "css":
     case "html":
     case "txt":

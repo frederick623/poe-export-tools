@@ -1,6 +1,7 @@
 import { downloadZip } from "client-zip";
 import { parseChatMessages, type ChatMessage } from "./chat-data";
 import { buildSourceArchiveEntries } from "./source-archive";
+import { extensionFromContentType } from "./gallery-archive";
 
 const form = document.querySelector<HTMLFormElement>("#share-form");
 const input = document.querySelector<HTMLInputElement>("#share-url");
@@ -406,7 +407,12 @@ function formatGalleryZipName(date: Date) {
   return `gallery${month}${day}${year}.zip`;
 }
 
-function buildAttachmentName(rawUrl: string, index: number, seenNames: Map<string, number>) {
+function buildAttachmentName(
+  rawUrl: string,
+  index: number,
+  seenNames: Map<string, number>,
+  contentType: string | null
+) {
   let name = `attachment-${index + 1}`;
   try {
     const url = new URL(rawUrl);
@@ -426,7 +432,9 @@ function buildAttachmentName(rawUrl: string, index: number, seenNames: Map<strin
   }
 
   if (!name.includes(".")) {
-    name = `${name}.${isVideoUrl(rawUrl) ? "mp4" : "png"}`;
+    const extension =
+      extensionFromContentType(contentType) ?? (isVideoUrl(rawUrl) ? "mp4" : "png");
+    name = `${name}.${extension}`;
   }
 
   seenNames.set(name, count + 1);
@@ -615,7 +623,12 @@ async function downloadAll() {
           }
 
           yield {
-            name: buildAttachmentName(url, index, seenNames),
+            name: buildAttachmentName(
+              url,
+              index,
+              seenNames,
+              response.headers.get("content-type")
+            ),
             input: response,
           };
         }

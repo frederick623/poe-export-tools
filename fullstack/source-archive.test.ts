@@ -55,6 +55,65 @@ describe("buildSourceArchiveEntries", () => {
     expect(entries[0]?.name).toBe("next-data.json");
   });
 
+  test("extracts file sections from Poe next-data when no file tree is present", () => {
+    const entries = buildSourceArchiveEntries({
+      name: "next-data.json",
+      type: "application/json",
+      raw: JSON.stringify({
+        props: {
+          pageProps: {
+            data: {
+              mainQuery: {
+                chatShare: {
+                  messagesConnection: {
+                    edges: [
+                      { node: { author: "human", text: "Write a script" } },
+                      {
+                        node: {
+                          author: "bot",
+                          text: [
+                            "## `requirements.txt`",
+                            "",
+                            "```txt",
+                            "requests",
+                            "```",
+                            "",
+                            "## `.env.example`",
+                            "```bash",
+                            "# comment",
+                            "KEY=value",
+                            "```",
+                            "",
+                            "## `build_reels.py`",
+                            "```python",
+                            "print('hi')",
+                            "```",
+                            "",
+                            "## Example reel object",
+                            "```json",
+                            "{}",
+                            "```",
+                          ].join("\n"),
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    });
+
+    expect(entries.map((entry) => entry.name)).toEqual([
+      "next-data.json",
+      "requirements.txt",
+      ".env.example",
+      "build_reels.py",
+    ]);
+  });
+
   test("resolves nested section paths when headings omit the tree root folder", () => {
     const entries = buildSourceArchiveEntries({
       name: "bundle.json",
